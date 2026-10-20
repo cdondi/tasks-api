@@ -1,4 +1,5 @@
 using MySqlConnector;
+using TasksApi.Api;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,6 +10,7 @@ builder.Services.AddTransient(_ => new MySqlConnection(connectionString));
 var app = builder.Build();
 
 app.MapGet("/", () => "Hello World!");
+app.MapTaskEndpoints();
 
 app.Run();
 
