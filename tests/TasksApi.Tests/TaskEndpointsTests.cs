@@ -111,10 +111,95 @@ public class TaskEndpointsTests(TasksApiFactory factory) : IAsyncLifetime
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
-    private async Task PostTaskAsync(int userId, string title)
+    [Theory]
+    [InlineData("todo")]
+    [InlineData("in_progress")]
+    [InlineData("done")]
+    public async Task Patch_ValidStatus_Returns200AndUpdatedTask(string status)
+    {
+        var created = await PostTaskAsync(_userId, "Change me");
+
+        var response = await _client.PatchAsJsonAsync($"/tasks/{created.Id}/status", new { status });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var task = await response.Content.ReadFromJsonAsync<TaskResponse>();
+        Assert.Equal(created.Id, task!.Id);
+        Assert.Equal(status, task.Status);
+        var stored = await _client.GetFromJsonAsync<List<TaskResponse>>($"/tasks?userId={_userId}");
+        Assert.Equal(status, Assert.Single(stored!).Status);
+    }
+
+    [Fact]
+    public async Task Patch_SameStatus_Returns200()
+    {
+        var created = await PostTaskAsync(_userId, "Already todo");
+
+        var response = await _client.PatchAsJsonAsync($"/tasks/{created.Id}/status", new { status = "todo" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Patch_UnknownId_Returns404()
+    {
+        var response = await _client.PatchAsJsonAsync($"/tasks/{int.MaxValue}/status", new { status = "done" });
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("archived")]
+    [InlineData("")]
+    [InlineData("DONE")]
+    [InlineData(null)]
+    public async Task Patch_InvalidStatus_Returns400(string? status)
+    {
+        var created = await PostTaskAsync(_userId, "Stay todo");
+
+        var response = await _client.PatchAsJsonAsync($"/tasks/{created.Id}/status", new { status });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var stored = await _client.GetFromJsonAsync<List<TaskResponse>>($"/tasks?userId={_userId}");
+        Assert.Equal("todo", Assert.Single(stored!).Status);
+    }
+
+    [Fact]
+    public async Task Delete_ExistingTask_Returns204AndRemovesIt()
+    {
+        var doomed = await PostTaskAsync(_userId, "Delete me");
+        await PostTaskAsync(_userId, "Keep me");
+
+        var response = await _client.DeleteAsync($"/tasks/{doomed.Id}");
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        var remaining = await _client.GetFromJsonAsync<List<TaskResponse>>($"/tasks?userId={_userId}");
+        Assert.Equal("Keep me", Assert.Single(remaining!).Title);
+    }
+
+    [Fact]
+    public async Task Delete_UnknownId_Returns404()
+    {
+        var response = await _client.DeleteAsync($"/tasks/{int.MaxValue}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_Twice_SecondReturns404()
+    {
+        var task = await PostTaskAsync(_userId, "Delete twice");
+        (await _client.DeleteAsync($"/tasks/{task.Id}")).EnsureSuccessStatusCode();
+
+        var response = await _client.DeleteAsync($"/tasks/{task.Id}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    private async Task<TaskResponse> PostTaskAsync(int userId, string title)
     {
         var response = await _client.PostAsJsonAsync("/tasks", new { userId, title });
         response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<TaskResponse>())!;
     }
 
     private async Task<int> CreateUserAsync()

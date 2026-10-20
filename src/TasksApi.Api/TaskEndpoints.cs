@@ -5,6 +5,8 @@ namespace TasksApi.Api;
 
 public record CreateTaskRequest(int UserId, string? Title, DateOnly? DueDate);
 
+public record UpdateTaskStatusRequest(string? Status);
+
 public record TaskResponse(int Id, int UserId, string Title, string Status, DateOnly? DueDate, DateTime CreatedAt);
 
 // Dapper maps rows onto settable properties (and converts the unsigned id columns to int).
@@ -24,6 +26,8 @@ internal class TaskRow
 public static class TaskEndpoints
 {
     private const int MaxTitleLength = 200;
+
+    private static readonly string[] ValidStatuses = ["todo", "in_progress", "done"];
 
     private const string SelectColumns =
         "SELECT id, user_id AS UserId, title, status, due_date AS DueDate, created_at AS CreatedAt FROM tasks";
@@ -65,6 +69,29 @@ public static class TaskEndpoints
 
             var row = await db.QuerySingleAsync<TaskRow>($"{SelectColumns} WHERE id = @id", new { id });
             return Results.Created($"/tasks/{id}", row.ToResponse());
+        });
+
+        app.MapPatch("/tasks/{id:int}/status", async (int id, UpdateTaskStatusRequest request, MySqlConnection db) =>
+        {
+            if (request.Status is null || !ValidStatuses.Contains(request.Status))
+            {
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    ["status"] = [$"status must be one of: {string.Join(", ", ValidStatuses)}."],
+                });
+            }
+
+            await db.ExecuteAsync("UPDATE tasks SET status = @Status WHERE id = @id", new { request.Status, id });
+
+            // Re-select rather than trusting the affected-row count, which can be 0 when the status is unchanged.
+            var row = await db.QuerySingleOrDefaultAsync<TaskRow>($"{SelectColumns} WHERE id = @id", new { id });
+            return row is null ? Results.NotFound() : Results.Ok(row.ToResponse());
+        });
+
+        app.MapDelete("/tasks/{id:int}", async (int id, MySqlConnection db) =>
+        {
+            var deleted = await db.ExecuteAsync("DELETE FROM tasks WHERE id = @id", new { id });
+            return deleted == 0 ? Results.NotFound() : Results.NoContent();
         });
     }
 
