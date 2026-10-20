@@ -163,6 +163,38 @@ public class TaskEndpointsTests(TasksApiFactory factory) : IAsyncLifetime
         Assert.Equal("todo", Assert.Single(stored!).Status);
     }
 
+    [Fact]
+    public async Task Delete_ExistingTask_Returns204AndRemovesIt()
+    {
+        var doomed = await PostTaskAsync(_userId, "Delete me");
+        await PostTaskAsync(_userId, "Keep me");
+
+        var response = await _client.DeleteAsync($"/tasks/{doomed.Id}");
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        var remaining = await _client.GetFromJsonAsync<List<TaskResponse>>($"/tasks?userId={_userId}");
+        Assert.Equal("Keep me", Assert.Single(remaining!).Title);
+    }
+
+    [Fact]
+    public async Task Delete_UnknownId_Returns404()
+    {
+        var response = await _client.DeleteAsync($"/tasks/{int.MaxValue}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_Twice_SecondReturns404()
+    {
+        var task = await PostTaskAsync(_userId, "Delete twice");
+        (await _client.DeleteAsync($"/tasks/{task.Id}")).EnsureSuccessStatusCode();
+
+        var response = await _client.DeleteAsync($"/tasks/{task.Id}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
     private async Task<TaskResponse> PostTaskAsync(int userId, string title)
     {
         var response = await _client.PostAsJsonAsync("/tasks", new { userId, title });

@@ -87,6 +87,12 @@ public static class TaskEndpoints
             var row = await db.QuerySingleOrDefaultAsync<TaskRow>($"{SelectColumns} WHERE id = @id", new { id });
             return row is null ? Results.NotFound() : Results.Ok(row.ToResponse());
         });
+
+        app.MapDelete("/tasks/{id:int}", async (int id, MySqlConnection db) =>
+        {
+            var deleted = await db.ExecuteAsync("DELETE FROM tasks WHERE id = @id", new { id });
+            return deleted == 0 ? Results.NotFound() : Results.NoContent();
+        });
     }
 
     private static Dictionary<string, string[]> Validate(CreateTaskRequest request)
